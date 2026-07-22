@@ -12,7 +12,7 @@ Always ACKs the message (returns successfully). On failure:
 - If consecutive failures >= threshold, halts remaining batches
 
 Environment variables:
-  STATE_MACHINE_ARN - ARN of the KB Curation Pipeline Step Function
+  STATE_MACHINE_ARN - ARN of the Article Curation Pipeline Step Function
   DLQ_URL - URL of the dead-letter queue for failed batches
   ARTICLE_TABLE - DynamoDB article metadata table name
   MAX_CONSECUTIVE_FAILURES - Circuit breaker threshold (default: 3)

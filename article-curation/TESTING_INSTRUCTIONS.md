@@ -1,6 +1,6 @@
 # Testing the Pipeline
 
-Guide to run the KB Curation Pipeline end-to-end, from small smoke tests to full multi-tenant load tests.
+Guide to run the Article Curation Pipeline end-to-end, from small smoke tests to full multi-tenant load tests.
 
 ## AWS Environment
 

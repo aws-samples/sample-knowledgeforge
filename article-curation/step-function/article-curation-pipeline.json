@@ -1,5 +1,5 @@
 {
-  "Comment": "KB Curation Pipeline. Receives a batch of articles for a single tenant, runs: Write Manifest, Classify & Embed, Dedup + Quality + Enrich, Aggregate Stats.",
+  "Comment": "Article Curation Pipeline. Receives a batch of articles for a single tenant, runs: Write Manifest, Classify & Embed, Dedup + Quality + Enrich, Aggregate Stats.",
   "StartAt": "Record Pipeline Start",
   "States": {
     "Record Pipeline Start": {

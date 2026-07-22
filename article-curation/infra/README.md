@@ -1,6 +1,6 @@
-# KB Curation Pipeline - CDK Infrastructure
+# Article Curation Pipeline - CDK Infrastructure
 
-This is the infrastructure code for the KB article curation pipeline. It deploys everything needed to ingest ServiceNow KB articles, run them through classification, dedup, quality scoring, and enrichment via Bedrock LLMs, and produce enriched articles for knowledge manager review.
+This is the infrastructure code for the article curation pipeline. It deploys everything needed to ingest ServiceNow KB articles, run them through classification, dedup, quality scoring, and enrichment via Bedrock LLMs, and produce enriched articles for knowledge manager review.
 
 ## What gets deployed
 
@@ -89,7 +89,7 @@ Each tenant can override quality thresholds and Step Function concurrency settin
 [
   {
     "tenant_id": "example",
-    "description": "KB Curation PoC tenant",
+    "description": "Article Curation PoC tenant",
     "overrides": {
       "quality_threshold_itsm_kb": 60,
       "sfn_max_concurrency": 40

@@ -1,4 +1,4 @@
-# KB Curation Pipeline
+# Article Curation Pipeline
 
 Pipeline to curate ITSM knowledge base articles. Ingests KB articles as JSON from a source S3 bucket, classifies them (SOP/FAQ/Troubleshooting/RCA/Runbook), generates embeddings, deduplicates, scores quality across 10 dimensions, and enriches the content using Bedrock LLMs. Enriched articles are sent to ServiceNow for knowledge manager review.
 
