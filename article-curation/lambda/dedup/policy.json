@@ -1,0 +1,53 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DynamoDBAccess",
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:Query",
+        "dynamodb:UpdateItem"
+      ],
+      "Resource": [
+        "arn:aws:dynamodb:eu-west-1:666666666666:table/example-s-euw1-article_metadata",
+        "arn:aws:dynamodb:eu-west-1:666666666666:table/example-s-euw1-article_metadata/index/*"
+      ]
+    },
+    {
+      "Sid": "S3VectorsAccess",
+      "Effect": "Allow",
+      "Action": [
+        "s3vectors:ListVectors",
+        "s3vectors:GetVectors",
+        "s3vectors:QueryVectors",
+        "s3vectors:PutVectors"
+      ],
+      "Resource": [
+        "arn:aws:s3vectors:eu-west-1:666666666666:bucket/example-s-euw1-kb-vectors",
+        "arn:aws:s3vectors:eu-west-1:666666666666:bucket/example-s-euw1-kb-vectors/index/kb-vectors-example"
+      ]
+    },
+    {
+      "Sid": "S3IngestRead",
+      "Effect": "Allow",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::example-s-euw1-kb-ingest/*"
+    },
+    {
+      "Sid": "S3IngestWrite",
+      "Effect": "Allow",
+      "Action": "s3:PutObject",
+      "Resource": "arn:aws:s3:::example-s-euw1-kb-ingest/generated/*"
+    },
+    {
+      "Sid": "BedrockInvoke",
+      "Effect": "Allow",
+      "Action": "bedrock:InvokeModel",
+      "Resource": [
+        "arn:aws:bedrock:eu-west-1:666666666666:inference-profile/eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+        "arn:aws:bedrock:*::foundation-model/anthropic.claude-sonnet-4-5-20250929-v1:0"
+      ]
+    }
+  ]
+}

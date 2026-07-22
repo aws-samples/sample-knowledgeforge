@@ -1,0 +1,31 @@
+# Global Environment Configuration
+# Defines account IDs, regions, and environment codes.
+# Tenants reference these values via ${var} placeholders in their config.
+
+project: kbanalytics
+
+environments:
+  dev:
+    description: "Development environment"
+    regions:
+      eu-west-1:
+        account_id: "555555555555"
+
+# Bedrock Inference Profile Prefix by Region
+# Cross-region inference profiles use a geographic prefix.
+inference_prefix_mappings:
+  eu-west-1: eu
+  us-east-1: us
+  us-west-2: us
+  ap-south-1: apac
+  ap-southeast-2: apac
+
+# Tags (applied to all resources)
+tags:
+  Project: kbanalytics
+  Owner: article-curation-team
+  CostCenter: XX-XXX-000
+  Application: article-curation-pipeline
+  CreatedBy: cdk
+  BackupRequired: "yes"
+  ProjectOwner: article-curation-team

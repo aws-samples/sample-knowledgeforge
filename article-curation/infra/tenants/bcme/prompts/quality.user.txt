@@ -1,0 +1,11 @@
+## Article Classification
+{{classification}}
+
+## Reference Articles
+{{references}}
+
+## Article Under Review
+{{article_content}}
+
+## Evaluation Criteria for {{classification}}
+{{criteria}}

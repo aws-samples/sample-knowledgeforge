@@ -1,0 +1,8 @@
+## Article Classification
+{{classification}}
+
+## Original Article Content
+{{original_content}}
+
+## Enriched Article Content
+{{article_content}}

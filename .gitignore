@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[codz]
+*.egg-info/
+.pytest_cache/
+.coverage
+.coverage.*
+.mypy_cache/
+.ruff_cache/
+
+# Node / CDK
+node_modules/
+cdk.out/
+*.tgz
+
+# Environments
+.env
+.venv
+venv/
+env/
+
+# Archives
+*.zip
+
+# Logs
+*.log

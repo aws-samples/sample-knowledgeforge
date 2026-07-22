@@ -1,0 +1,388 @@
+{
+  "Comment": "KB Curation Pipeline. Receives a batch of articles for a single tenant, runs: Write Manifest, Classify & Embed, Dedup + Quality + Enrich, Aggregate Stats.",
+  "StartAt": "Record Pipeline Start",
+  "States": {
+    "Record Pipeline Start": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:putItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Item": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "tenant_code": { "S.$": "$.tenant_code" },
+          "home_region": { "S.$": "$.home_region" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.job_id, $.batch_id)" },
+          "parent_job_id": { "S.$": "$.job_id" },
+          "batch_id": { "S.$": "$.batch_id" },
+          "Pipeline": { "S": "KNOWLEDGE_CURATION" },
+          "Status": { "S": "RUNNING" },
+          "current_phase": { "S": "Writing Manifest" },
+          "started_at": { "S.$": "$$.Execution.StartTime" }
+        }
+      },
+      "ResultPath": "$.jobStatus",
+      "Next": "Write Manifest"
+    },
+
+    "Write Manifest": {
+      "Type": "Task",
+      "Comment": "Write the tenant's changed files to S3 as the phase1 manifest for Classify & Embed.",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "<<WRITE_MANIFEST_FN>>",
+        "Payload": {
+          "action": "write_manifest",
+          "tenant_code.$": "$.tenant_code",
+          "tenant_id.$": "$.tenant_id",
+          "home_region.$": "$.home_region",
+          "job_id.$": "$.job_id",
+          "files.$": "$.files"
+        }
+      },
+      "ResultSelector": {
+        "tenant_code.$": "$.Payload.tenant_code",
+        "home_region.$": "$.Payload.home_region",
+        "job_id.$": "$.Payload.job_id",
+        "manifest_bucket.$": "$.Payload.manifest_bucket",
+        "manifest_key.$": "$.Payload.manifest_key",
+        "article_count.$": "$.Payload.article_count",
+        "stats.$": "$.Payload.stats"
+      },
+      "ResultPath": "$.detection",
+      "Retry": [
+        {
+          "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"],
+          "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2
+        }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "Record Pipeline Failure", "ResultPath": "$.error" }
+      ],
+      "Next": "Record Change Detection Complete"
+    },
+
+    "Record Change Detection Complete": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Key": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.job_id, $.batch_id)" }
+        },
+        "UpdateExpression": "SET current_phase = :phase, articles_total = :total, change_detection = :cd, change_detection_completed_at = :ts",
+        "ExpressionAttributeValues": {
+          ":phase": { "S": "Classifying & Embedding" },
+          ":total": { "N.$": "States.Format('{}', $.detection.article_count)" },
+          ":cd": { "S.$": "States.JsonToString($.detection.stats)" },
+          ":ts": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Any Articles To Process?"
+    },
+
+    "Any Articles To Process?": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.detection.article_count", "NumericGreaterThan": 0, "Next": "Classify & Embed Articles" }
+      ],
+      "Default": "Aggregate Pipeline Stats"
+    },
+
+    "Classify & Embed Articles": {
+      "Type": "Map",
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:getObject",
+        "ReaderConfig": { "InputType": "JSON" },
+        "Parameters": {
+          "Bucket.$": "$.detection.manifest_bucket",
+          "Key.$": "$.detection.manifest_key"
+        }
+      },
+      "ItemBatcher": {
+        "MaxItemsPerBatch": <<SFN_MAX_ITEMS_PER_BATCH>>,
+        "BatchInput": {
+          "job_id.$": "$.detection.job_id",
+          "batch_id.$": "$.batch_id",
+          "tenant_code.$": "$.tenant_code",
+          "tenant_id.$": "$.tenant_id",
+          "home_region.$": "$.home_region"
+        }
+      },
+      "MaxConcurrency": <<SFN_MAX_CONCURRENCY>>,
+      "ItemProcessor": {
+        "ProcessorConfig": { "Mode": "DISTRIBUTED", "ExecutionType": "STANDARD" },
+        "StartAt": "Classify & Embed Batch",
+        "States": {
+          "Classify & Embed Batch": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "<<ARTICLE_EMBED_FN>>",
+              "Payload": {
+                "tenant_code.$": "$.BatchInput.tenant_code",
+                "tenant_id.$": "$.BatchInput.tenant_id",
+                "home_region.$": "$.BatchInput.home_region",
+                "job_id.$": "$.BatchInput.job_id",
+                "batch_id.$": "$.BatchInput.batch_id",
+                "articles.$": "$.Items"
+              }
+            },
+            "ResultSelector": { "stats.$": "$.Payload.phase1_stats" },
+            "Retry": [
+              { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2 },
+              { "ErrorEquals": ["States.TaskFailed", "States.Timeout"], "IntervalSeconds": 10, "MaxAttempts": 1, "BackoffRate": 1 }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ToleratedFailurePercentage": <<SFN_TOLERATED_FAILURE_PCT>>,
+      "ResultWriter": {
+        "Resource": "arn:aws:states:::s3:putObject",
+        "Parameters": {
+          "Bucket.$": "$.detection.manifest_bucket",
+          "Prefix.$": "States.Format('{}/pipeline-results/{}/classify-embed', $.tenant_id, $.detection.job_id)"
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "Record Pipeline Failure", "ResultPath": "$.error" }
+      ],
+      "Next": "Record Classify & Embed Complete"
+    },
+
+    "Record Classify & Embed Complete": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Key": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.detection.job_id, $.batch_id)" }
+        },
+        "UpdateExpression": "SET current_phase = :phase, classify_embed_completed_at = :ts",
+        "ExpressionAttributeValues": {
+          ":phase": { "S": "Dedup, Quality & Enrichment" },
+          ":ts": { "S.$": "$$.State.EnteredTime" }
+        }
+      },
+      "ResultPath": null,
+      "Next": "Collect Embedded Articles"
+    },
+
+    "Collect Embedded Articles": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "<<DEDUP_FN>>",
+        "Payload": {
+          "action": "prepare",
+          "tenant_code.$": "$.tenant_code",
+          "tenant_id.$": "$.tenant_id",
+          "home_region.$": "$.home_region",
+          "job_id.$": "$.detection.job_id"
+        }
+      },
+      "ResultSelector": {
+        "tenant_code.$": "$.Payload.tenant_code",
+        "home_region.$": "$.Payload.home_region",
+        "job_id.$": "$.Payload.job_id",
+        "manifest_bucket.$": "$.Payload.manifest_bucket",
+        "manifest_key.$": "$.Payload.manifest_key",
+        "article_count.$": "$.Payload.article_count"
+      },
+      "ResultPath": "$.phase2_prep",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "Record Pipeline Failure", "ResultPath": "$.error" }
+      ],
+      "Next": "Any Embedded Articles?"
+    },
+
+    "Any Embedded Articles?": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.phase2_prep.article_count", "NumericGreaterThan": 0, "Next": "Dedup, Score & Enrich Articles" }
+      ],
+      "Default": "Aggregate Pipeline Stats"
+    },
+
+    "Dedup, Score & Enrich Articles": {
+      "Type": "Map",
+      "ItemReader": {
+        "Resource": "arn:aws:states:::s3:getObject",
+        "ReaderConfig": { "InputType": "JSON" },
+        "Parameters": {
+          "Bucket.$": "$.phase2_prep.manifest_bucket",
+          "Key.$": "$.phase2_prep.manifest_key"
+        }
+      },
+      "ItemBatcher": {
+        "MaxItemsPerBatch": <<SFN_MAX_ITEMS_PER_BATCH>>,
+        "BatchInput": {
+          "job_id.$": "$.phase2_prep.job_id",
+          "batch_id.$": "$.batch_id",
+          "tenant_code.$": "$.tenant_code",
+          "tenant_id.$": "$.tenant_id",
+          "home_region.$": "$.home_region"
+        }
+      },
+      "MaxConcurrency": <<SFN_MAX_CONCURRENCY>>,
+      "ItemProcessor": {
+        "ProcessorConfig": { "Mode": "DISTRIBUTED", "ExecutionType": "STANDARD" },
+        "StartAt": "Dedup, Score & Enrich Batch",
+        "States": {
+          "Dedup, Score & Enrich Batch": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::lambda:invoke",
+            "Parameters": {
+              "FunctionName": "<<DEDUP_FN>>",
+              "Payload": {
+                "action": "process",
+                "tenant_code.$": "$.BatchInput.tenant_code",
+                "tenant_id.$": "$.BatchInput.tenant_id",
+                "home_region.$": "$.BatchInput.home_region",
+                "job_id.$": "$.BatchInput.job_id",
+                "batch_id.$": "$.BatchInput.batch_id",
+                "articles.$": "$.Items"
+              }
+            },
+            "ResultSelector": { "stats.$": "$.Payload.phase2_dedup_stats" },
+            "Retry": [
+              { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2 },
+              { "ErrorEquals": ["States.TaskFailed", "States.Timeout"], "IntervalSeconds": 10, "MaxAttempts": 1, "BackoffRate": 1 }
+            ],
+            "End": true
+          }
+        }
+      },
+      "ToleratedFailurePercentage": <<SFN_TOLERATED_FAILURE_PCT>>,
+      "ResultWriter": {
+        "Resource": "arn:aws:states:::s3:putObject",
+        "Parameters": {
+          "Bucket.$": "$.phase2_prep.manifest_bucket",
+          "Prefix.$": "States.Format('{}/pipeline-results/{}/dedup-quality-enrich', $.tenant_id, $.phase2_prep.job_id)"
+        }
+      },
+      "ResultPath": null,
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "Record Pipeline Failure", "ResultPath": "$.error" }
+      ],
+      "Next": "Aggregate Pipeline Stats"
+    },
+
+    "Aggregate Pipeline Stats": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "<<DEDUP_FN>>",
+        "Payload": {
+          "action": "aggregate",
+          "tenant_code.$": "$.tenant_code",
+          "tenant_id.$": "$.tenant_id",
+          "home_region.$": "$.home_region",
+          "job_id.$": "$.detection.job_id",
+          "batch_id.$": "$.batch_id",
+          "started_at.$": "$$.Execution.StartTime",
+          "change_detection_stats.$": "$.detection.stats",
+          "manifest_bucket.$": "$.detection.manifest_bucket",
+          "manifest_key.$": "$.detection.manifest_key"
+        }
+      },
+      "ResultSelector": {
+        "tenant_code.$": "$.Payload.tenant_code",
+        "home_region.$": "$.Payload.home_region",
+        "job_id.$": "$.Payload.job_id",
+        "pipeline_stats.$": "$.Payload"
+      },
+      "ResultPath": "$.aggregation",
+      "Retry": [
+        { "ErrorEquals": ["Lambda.ServiceException", "Lambda.AWSLambdaException", "Lambda.TooManyRequestsException"], "IntervalSeconds": 5, "MaxAttempts": 2, "BackoffRate": 2 }
+      ],
+      "Catch": [
+        { "ErrorEquals": ["States.ALL"], "Next": "Record Pipeline Success Without Stats", "ResultPath": "$.error" }
+      ],
+      "Next": "Record Pipeline Success"
+    },
+
+    "Record Pipeline Success": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Key": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.detection.job_id, $.batch_id)" }
+        },
+        "UpdateExpression": "SET #s = :status, current_phase = :phase, completed_at = :ts, articles_in_job = :aij, articles_in_table = :ait, change_detection = :cd, classify_embed = :p1, dedup_quality_enrich = :p2, quality_summary = :qs, token_usage = :tu, efficiency = :eff, status_breakdown = :sb, table_snapshot = :snap, language_breakdown = :lang",
+        "ExpressionAttributeNames": { "#s": "Status" },
+        "ExpressionAttributeValues": {
+          ":status": { "S": "COMPLETED" },
+          ":phase": { "S": "Completed" },
+          ":ts": { "S.$": "$$.State.EnteredTime" },
+          ":aij": { "N.$": "States.Format('{}', $.aggregation.pipeline_stats.articles_in_job)" },
+          ":ait": { "N.$": "States.Format('{}', $.aggregation.pipeline_stats.articles_in_table)" },
+          ":cd": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.change_detection)" },
+          ":p1": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.phase1)" },
+          ":p2": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.phase2)" },
+          ":qs": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.quality_summary)" },
+          ":tu": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.token_usage)" },
+          ":eff": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.efficiency)" },
+          ":sb": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.status_breakdown)" },
+          ":snap": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.table_snapshot)" },
+          ":lang": { "S.$": "States.JsonToString($.aggregation.pipeline_stats.language_breakdown)" }
+        }
+      },
+      "ResultPath": null,
+      "End": true
+    },
+
+    "Record Pipeline Success Without Stats": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Key": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.job_id, $.batch_id)" }
+        },
+        "UpdateExpression": "SET #s = :status, current_phase = :phase, completed_at = :ts, Errors = :errors",
+        "ExpressionAttributeNames": { "#s": "Status" },
+        "ExpressionAttributeValues": {
+          ":status": { "S": "COMPLETED" },
+          ":phase": { "S": "Completed" },
+          ":ts": { "S.$": "$$.State.EnteredTime" },
+          ":errors": { "S": "Stats aggregation failed, check CloudWatch logs" }
+        }
+      },
+      "ResultPath": null,
+      "End": true
+    },
+
+    "Record Pipeline Failure": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::dynamodb:updateItem",
+      "Parameters": {
+        "TableName": "<<JOB_STATUS_TABLE>>",
+        "Key": {
+          "tenant_id": { "S.$": "$.tenant_id" },
+          "job_id": { "S.$": "States.Format('{}#{}', $.job_id, $.batch_id)" }
+        },
+        "UpdateExpression": "SET #s = :status, current_phase = :phase, completed_at = :ts, Errors = :errors",
+        "ExpressionAttributeNames": { "#s": "Status" },
+        "ExpressionAttributeValues": {
+          ":status": { "S": "FAILED" },
+          ":phase": { "S": "Failed" },
+          ":ts": { "S.$": "$$.State.EnteredTime" },
+          ":errors": { "S.$": "States.JsonToString($.error)" }
+        }
+      },
+      "ResultPath": null,
+      "End": true
+    }
+  }
+}

@@ -1,0 +1,62 @@
+{
+  "name": "@kbanalytics/cdk-constructs",
+  "version": "1.0.0",
+  "description": "Reusable AWS CDK constructs for KB Analytics platform - Lambda, Lex, Connect, and more. Package v1.0.0",
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
+  "scripts": {
+    "build": "tsc && node scripts/copy-lambda-assets.js",
+    "watch": "tsc -w",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"**/*.ts\"",
+    "format:check": "prettier --check \"**/*.ts\"",
+    "clean": "rm -rf lib/ coverage/ *.tgz",
+    "package": "npm pack"
+  },
+  "keywords": [
+    "aws",
+    "cdk",
+    "constructs",
+    "lambda",
+    "lex",
+    "connect",
+    "kbanalytics",
+    "infrastructure"
+  ],
+  "author": "KB Analytics Team",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/your-org/kbanalytics-cdk-module.git"
+  },
+  "files": [
+    "lib/**/*",
+    "construct-versions.json",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "aws-cdk-lib": "^2.241.0",
+    "constructs": "^10.5.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.0",
+    "@types/js-yaml": "^4.0.5",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^8.0.0",
+    "@typescript-eslint/parser": "^8.0.0",
+    "aws-cdk-lib": "2.241.0",
+    "constructs": "10.5.1",
+    "eslint": "^9.0.0",
+    "eslint-config-prettier": "^10.0.0",
+    "eslint-plugin-prettier": "^5.0.0",
+    "jest": "^29.5.0",
+    "jest-junit": "^16.0.0",
+    "prettier": "^3.0.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "js-yaml": "^4.1.0"
+  }
+}
