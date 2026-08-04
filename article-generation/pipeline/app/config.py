@@ -142,23 +142,44 @@ class PipelineConfig:
 # Maps (section, field) -> env var name.  Built dynamically from the
 # dataclass hierarchy so every flat + one-level-nested field is covered.
 
+# Explicit registry of config dataclasses, used to resolve string type
+# annotations (forward references) into their classes without using globals(),
+# which avoids dynamic globals() indexing.
+_CONFIG_TYPES: Dict[str, type] = {
+    cls.__name__: cls
+    for cls in (
+        AwsConfig, S3Config, SqsConfig, DynamoDBConfig, BedrockRetryConfig,
+        BedrockClientConfig, BedrockConfig, GuardrailConfig, VectorsConfig,
+        PipelineRunConfig, EcsConfig, EcrConfig, PromptsConfig, TagsConfig,
+        PipelineConfig,
+    )
+}
+
+
+def _resolve_type(annotation):
+    """Resolve a dataclass field annotation to its class.
+
+    Field annotations may be actual classes or string forward references;
+    string references are looked up in the explicit _CONFIG_TYPES registry.
+    """
+    if isinstance(annotation, str):
+        return _CONFIG_TYPES.get(annotation)
+    return annotation
+
+
 _ENV_MAP: Dict[tuple, str] = {}
 
 
 def _build_env_map() -> None:
     """Populate _ENV_MAP from PipelineConfig field hierarchy."""
     for section_field in fields(PipelineConfig):
-        section_cls = section_field.type
         # Resolve string annotations to actual types
-        if isinstance(section_cls, str):
-            section_cls = globals().get(section_cls)
+        section_cls = _resolve_type(section_field.type)
         if section_cls is None or not hasattr(section_cls, "__dataclass_fields__"):
             continue
         section_name = section_field.name
         for child_field in fields(section_cls):
-            child_cls = child_field.type
-            if isinstance(child_cls, str):
-                child_cls = globals().get(child_cls)
+            child_cls = _resolve_type(child_field.type)
             # Nested dataclass (e.g. bedrock.retry, bedrock.client)
             if child_cls is not None and hasattr(child_cls, "__dataclass_fields__"):
                 for grandchild in fields(child_cls):
@@ -216,9 +237,7 @@ def _dict_to_config(data: dict) -> PipelineConfig:
         if section_data is None:
             continue
 
-        section_cls = section_field.type
-        if isinstance(section_cls, str):
-            section_cls = globals().get(section_cls)
+        section_cls = _resolve_type(section_field.type)
         if section_cls is None:
             continue
 
@@ -233,9 +252,7 @@ def _dict_to_config(data: dict) -> PipelineConfig:
                 continue
             child_val = section_data[child_name]
 
-            child_cls = child_field.type
-            if isinstance(child_cls, str):
-                child_cls = globals().get(child_cls)
+            child_cls = _resolve_type(child_field.type)
 
             # Nested dataclass (e.g. bedrock.retry)
             if child_cls is not None and hasattr(child_cls, "__dataclass_fields__") and isinstance(child_val, dict):

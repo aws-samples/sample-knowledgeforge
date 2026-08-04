@@ -74,9 +74,22 @@ export class ArticleCurationTenantStack extends cdk.Stack {
     });
 
     // ── Bedrock Prompts (per-tenant) ─────────────────────────────────────
+    // Validate the tenant id and prompt file name so they cannot introduce
+    // path separators or traversal into the resolved file path.
+    const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
+    if (!SAFE_NAME.test(tenantId)) {
+      throw new Error(`Invalid tenantId for prompt path: ${tenantId}`);
+    }
     const promptsDir = path.join(__dirname, '..', 'tenants', tenantId, 'prompts');
     const loadPrompt = (name: string) => {
+      if (!/^[A-Za-z0-9_.-]+$/.test(name)) {
+        throw new Error(`Invalid prompt file name: ${name}`);
+      }
       const filePath = path.join(promptsDir, name);
+      // Ensure the resolved path stays within promptsDir (defense against traversal).
+      if (path.relative(promptsDir, filePath).startsWith('..')) {
+        throw new Error(`Refusing prompt file outside prompts dir: ${name}`);
+      }
       if (!fs.existsSync(filePath)) {
         throw new Error(`Prompt file not found: ${filePath}. Each tenant must have its own prompts in tenants/${tenantId}/prompts/`);
       }

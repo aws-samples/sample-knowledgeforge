@@ -8,7 +8,7 @@ import os
 import boto3
 from logger import get_logger
 from utils import tenant_s3_prefix
-from tenant_discovery import run_athena_query
+from tenant_discovery import run_athena_query, validate_identifier
 
 GLUE_DATABASE = os.environ.get('GLUE_DATABASE', '')
 GLUE_TABLE = os.environ.get('GLUE_TABLE', '')
@@ -61,10 +61,12 @@ def query_glue_changed_articles_with_metadata(tenant_id, since_timestamp):
     Full load (since_timestamp=None): returns all articles for the tenant.
     Incremental: returns only articles where last_updated_ts_utc > since_timestamp.
     """
-    # Sanitize inputs to prevent SQL injection
-    safe_tenant = tenant_id.replace("'", "''")
+    validate_identifier(GLUE_DATABASE, 'GLUE_DATABASE')
+    validate_identifier(GLUE_TABLE, 'GLUE_TABLE')
 
-    # Select metadata fields from Glue table (NO full_text - read from source S3 instead)
+    # Values (tenant id, timestamp) are bound via Athena ExecutionParameters
+    # ('?' placeholders) rather than string interpolation, preventing SQL
+    # injection. Only the validated table identifier is interpolated.
     sql = f"""
     SELECT 
         src_kb_article_id,
@@ -82,16 +84,18 @@ def query_glue_changed_articles_with_metadata(tenant_id, since_timestamp):
         tenant_code,
         aws_region
     FROM "{GLUE_DATABASE}"."{GLUE_TABLE}"
-    WHERE src_tenant_id = '{safe_tenant}'
-    """
-    
+    WHERE src_tenant_id = ?
+    """  # nosec B608 - values parameterized via ExecutionParameters; identifiers validated
+    params = [tenant_id]
+
     if since_timestamp:
         # Convert ISO 8601 format (2026-05-11T10:44:49.150Z) to Athena TIMESTAMP format (2026-05-11 10:44:49.150)
-        safe_ts = since_timestamp.replace("'", "''").replace('T', ' ').rstrip('Z')
-        sql += f" AND last_updated_ts_utc > TIMESTAMP '{safe_ts}'"
+        athena_ts = since_timestamp.replace('T', ' ').rstrip('Z')
+        sql += " AND last_updated_ts_utc > CAST(? AS TIMESTAMP)"
+        params.append(athena_ts)
 
     try:
-        rows = run_athena_query(sql)
+        rows = run_athena_query(sql, execution_parameters=params)
         articles = []
         for row in rows:
             if len(row) >= 12 and row[0]:  # Ensure we have all fields (removed full_text)
@@ -135,28 +139,35 @@ def build_multi_tenant_athena_query(tenant_timestamps):
     Returns:
         SQL query string
     """
+    validate_identifier(GLUE_DATABASE, 'GLUE_DATABASE')
+    validate_identifier(GLUE_TABLE, 'GLUE_TABLE')
+
     conditions = []
+    params = []
     incremental_tenants = []
     full_load_tenants = []
-    
+
     for tenant_id, last_run in tenant_timestamps.items():
-        safe_tenant = tenant_id.replace("'", "''")
-        
         if last_run:
             # Incremental: filter by timestamp
             # Convert ISO 8601 format (2026-05-11T10:44:49.150Z) to Athena TIMESTAMP format (2026-05-11 10:44:49.150)
-            safe_ts = last_run.replace("'", "''").replace('T', ' ').rstrip('Z')
+            athena_ts = last_run.replace('T', ' ').rstrip('Z')
             conditions.append(
-                f"(src_tenant_id = '{safe_tenant}' AND last_updated_ts_utc > TIMESTAMP '{safe_ts}')"
+                "(src_tenant_id = ? AND last_updated_ts_utc > CAST(? AS TIMESTAMP))"
             )
+            params.append(tenant_id)
+            params.append(athena_ts)
             incremental_tenants.append(f"{tenant_id}(since:{last_run[:10]})")
         else:
             # Full load: no timestamp filter
-            conditions.append(f"(src_tenant_id = '{safe_tenant}')")
+            conditions.append("(src_tenant_id = ?)")
+            params.append(tenant_id)
             full_load_tenants.append(tenant_id)
-    
+
     where_clause = " OR ".join(conditions)
-    
+
+    # Tenant ids and timestamps are bound via Athena ExecutionParameters ('?'
+    # placeholders); only the validated table identifier is interpolated.
     sql = f"""
     SELECT 
         src_tenant_id,
@@ -177,7 +188,7 @@ def build_multi_tenant_athena_query(tenant_timestamps):
     FROM "{GLUE_DATABASE}"."{GLUE_TABLE}"
     WHERE {where_clause}
     ORDER BY src_tenant_id
-    """
+    """  # nosec B608 - values parameterized via ExecutionParameters; identifiers validated
     
     log.info('Built multi-tenant Athena query',
              tenant_count=len(tenant_timestamps),
@@ -187,7 +198,7 @@ def build_multi_tenant_athena_query(tenant_timestamps):
              full_load_tenants=full_load_tenants[:5],  # Log first 5
              query_length=len(sql))
     
-    return sql
+    return sql, params
 
 
 def start_multi_tenant_athena_query(tenant_timestamps):
@@ -200,14 +211,17 @@ def start_multi_tenant_athena_query(tenant_timestamps):
     Returns:
         query_id string or None on failure
     """
-    sql = build_multi_tenant_athena_query(tenant_timestamps)
+    sql, params = build_multi_tenant_athena_query(tenant_timestamps)
     
     try:
-        execution = athena.start_query_execution(
-            QueryString=sql,
-            QueryExecutionContext={'Database': GLUE_DATABASE},
-            ResultConfiguration={'OutputLocation': ATHENA_OUTPUT_LOCATION},
-        )
+        query_kwargs = {
+            'QueryString': sql,
+            'QueryExecutionContext': {'Database': GLUE_DATABASE},
+            'ResultConfiguration': {'OutputLocation': ATHENA_OUTPUT_LOCATION},
+        }
+        if params:
+            query_kwargs['ExecutionParameters'] = params
+        execution = athena.start_query_execution(**query_kwargs)
         query_id = execution['QueryExecutionId']
         log.info('Multi-tenant Athena query started',
                  query_id=query_id,

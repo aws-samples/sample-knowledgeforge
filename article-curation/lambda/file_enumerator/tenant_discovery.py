@@ -5,6 +5,7 @@ Discovers tenants from Glue catalog using Athena queries.
 """
 
 import os
+import re
 import boto3
 from logger import get_logger
 
@@ -16,19 +17,40 @@ REGION = os.environ.get('AWS_REGION', '')
 athena = boto3.client('athena', region_name=REGION)
 log = get_logger(lambda_name='file_enumerator')
 
+# Glue/Athena identifiers (database, table) come from deploy-time env vars and
+# cannot be bound as query parameters. Validate them against a strict allowlist
+# so they can be safely referenced in the FROM clause. All *values* in queries
+# are bound via Athena ExecutionParameters instead of string interpolation.
+_IDENTIFIER_RE = re.compile(r'^[A-Za-z0-9_]+$')
 
-def run_athena_query(sql, max_wait_seconds=120):
+
+def validate_identifier(value, name):
+    """Ensure a SQL identifier (database/table name) is a safe bare identifier."""
+    if not value or not _IDENTIFIER_RE.match(value):
+        raise ValueError(f'Invalid SQL identifier for {name}: {value!r}')
+    return value
+
+
+def run_athena_query(sql, max_wait_seconds=120, execution_parameters=None):
     """Execute an Athena query and return result rows (list of lists).
     Polls until query completes or times out.
+
+    execution_parameters: optional list of positional values bound to '?'
+    placeholders in the query (Athena parameterized query), preventing SQL
+    injection from user-influenced values.
     """
     log.info('Running Athena query', sql=sql[:200])
 
+    query_kwargs = {
+        'QueryString': sql,
+        'QueryExecutionContext': {'Database': GLUE_DATABASE},
+        'ResultConfiguration': {'OutputLocation': ATHENA_OUTPUT_LOCATION},
+    }
+    if execution_parameters:
+        query_kwargs['ExecutionParameters'] = execution_parameters
+
     try:
-        execution = athena.start_query_execution(
-            QueryString=sql,
-            QueryExecutionContext={'Database': GLUE_DATABASE},
-            ResultConfiguration={'OutputLocation': ATHENA_OUTPUT_LOCATION},
-        )
+        execution = athena.start_query_execution(**query_kwargs)
     except Exception as e:
         log.error('Failed to start Athena query', error=str(e), sql=sql[:200])
         raise
@@ -93,13 +115,19 @@ def discover_tenants_from_glue():
     tenant_code and aws_region columns.
     Returns a list of dicts: [{"tenant_id": UUID, "tenant_code": str, "aws_region": str}]
     """
+    validate_identifier(GLUE_DATABASE, 'GLUE_DATABASE')
+    validate_identifier(GLUE_TABLE, 'GLUE_TABLE')
+
+    # No user-supplied values in this query; the only interpolated tokens are the
+    # database/table identifiers, which are validated above and cannot be bound
+    # as Athena parameters.
     sql = f"""
     SELECT DISTINCT src_tenant_id, tenant_code, aws_region
     FROM "{GLUE_DATABASE}"."{GLUE_TABLE}"
     WHERE src_tenant_id IS NOT NULL
     ORDER BY src_tenant_id
-    """
-    
+    """  # nosec B608 - identifiers validated; no value interpolation
+
     try:
         rows = run_athena_query(sql, max_wait_seconds=60)
         tenants = []

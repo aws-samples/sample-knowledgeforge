@@ -30,7 +30,13 @@ Usage in handlers:
 import os
 import json
 import urllib.request
+from urllib.parse import quote
 import logging
+
+# The AppConfig Lambda extension always serves configuration from this fixed
+# local HTTP endpoint. Requests are restricted to it to avoid any possibility
+# of urllib opening file:// or other unexpected schemes.
+_APPCONFIG_EXTENSION_BASE = "http://localhost:2772"
 
 # Configure logging
 logger = logging.getLogger()
@@ -52,9 +58,21 @@ def _deep_merge(base, override):
 
 def _fetch_profile(app, env_name, profile):
     """Fetch a single AppConfig profile from the Lambda extension."""
-    url = f"http://localhost:2772/applications/{app}/environments/{env_name}/configurations/{profile}"
+    # URL-encode each path segment and pin the request to the local AppConfig
+    # extension endpoint so a crafted tenant/profile name cannot alter the host
+    # or scheme.
+    url = (
+        f"{_APPCONFIG_EXTENSION_BASE}"
+        f"/applications/{quote(app, safe='')}"
+        f"/environments/{quote(env_name, safe='')}"
+        f"/configurations/{quote(profile, safe='')}"
+    )
+    if not url.startswith(_APPCONFIG_EXTENSION_BASE + "/"):
+        raise ValueError(f"[APPCONFIG] refusing to fetch from unexpected URL: {url}")
     try:
-        with urllib.request.urlopen(url, timeout=5) as resp:
+        request = urllib.request.Request(url, method="GET")
+        # Scheme/host are fixed to the local http AppConfig extension (validated above).
+        with urllib.request.urlopen(request, timeout=5) as resp:  # nosec B310 - fixed localhost http endpoint
             data = json.loads(resp.read().decode())
             logger.info(f"[APPCONFIG] loaded {profile} from {app}")
             return data

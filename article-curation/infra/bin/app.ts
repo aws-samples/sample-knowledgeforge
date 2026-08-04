@@ -56,11 +56,22 @@ if (fs.existsSync(envOverridePath)) {
 }
 const envMergedConfig = deepMerge(JSON.parse(JSON.stringify(baseConfig)), envOverrides);
 
+// Only allow simple tenant directory names (no path separators / traversal).
+const SAFE_NAME = /^[A-Za-z0-9_-]+$/;
+
 // Discover tenants from tenants/ directory
 const tenantsDir = path.resolve(__dirname, '..', 'tenants');
-const tenantIds = fs.readdirSync(tenantsDir).filter(d =>
-  fs.statSync(path.join(tenantsDir, d)).isDirectory()
-);
+const tenantIds = fs.readdirSync(tenantsDir).filter(d => {
+  if (!SAFE_NAME.test(d)) {
+    return false;
+  }
+  const tenantPath = path.join(tenantsDir, d);
+  // Ensure the resolved path stays within tenantsDir (defense against traversal).
+  if (path.relative(tenantsDir, tenantPath).startsWith('..')) {
+    throw new Error(`Refusing tenant directory outside tenants/: ${d}`);
+  }
+  return fs.statSync(tenantPath).isDirectory();
+});
 
 if (tenantIds.length === 0) {
   throw new Error('No tenants found in tenants/ directory');

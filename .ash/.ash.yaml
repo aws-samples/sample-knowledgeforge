@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/awslabs/automated-security-helper/refs/heads/main/automated_security_helper/schemas/AshConfig.json
+#
+# ASH v3 configuration for KnowledgeForge.
+#
+# Genuine first-party findings are fixed in code. The exclusions below cover
+# only (a) vendored third-party libraries bundled into the Lambda layer and
+# (b) findings verified as false positives (test fixtures, build-time-only
+# path handling that is validated against an allowlist).
+project_name: knowledgeforge
+global_settings:
+  severity_threshold: MEDIUM
+
+  # Vendored third-party libraries bundled into the shared Lambda layer.
+  # These are dependencies, not first-party code, and are excluded from scanning.
+  ignore_paths:
+    - path: 'article-curation/lambda/shared/python/bs4/'
+      reason: 'Vendored third-party library (BeautifulSoup) bundled into the Lambda layer; not first-party code.'
+    - path: 'article-curation/lambda/shared/python/soupsieve/'
+      reason: 'Vendored third-party library (soupsieve) bundled into the Lambda layer; not first-party code.'
+    - path: 'article-curation/lambda/shared/python/typing_extensions.py'
+      reason: 'Vendored third-party library (typing_extensions) bundled into the Lambda layer; not first-party code.'
+    - path: 'article-curation/lambda/shared/python/beautifulsoup4-4.14.3.dist-info/'
+      reason: 'Third-party package distribution metadata.'
+    - path: 'article-curation/lambda/shared/python/soupsieve-2.8.3.dist-info/'
+      reason: 'Third-party package distribution metadata.'
+    - path: 'article-curation/lambda/shared/python/typing_extensions-4.15.0.dist-info/'
+      reason: 'Third-party package distribution metadata.'
+
+  # Verified false positives (real fixes applied where applicable).
+  suppressions:
+    - rule_id: 'SECRET-HEX-HIGH-ENTROPY-STRING'
+      file_path: 'article-curation/lambda/tests/conftest.py'
+      reason: 'Test fixture: non-secret placeholder hex value used only in unit tests; not a real credential.'
+    - rule_id: 'javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal'
+      file_path: 'article-curation/kbanalytics-cdk-module-dev/scripts/copy-lambda-assets.js'
+      reason: 'Build-time asset-copy script; paths derive from the local repo layout, not runtime or user input.'
+    - rule_id: 'javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal'
+      file_path: 'article-curation/infra/bin/app.ts'
+      reason: 'CDK synth-time only; tenant directory names are validated against ^[A-Za-z0-9_-]+$ and confined to tenants/.'
+    - rule_id: 'javascript.lang.security.audit.path-traversal.path-join-resolve-traversal.path-join-resolve-traversal'
+      file_path: 'article-curation/infra/lib/article-curation-tenant-stack.ts'
+      reason: 'CDK synth-time only; tenantId and prompt file names are validated against an allowlist and confined to the prompts dir.'
+    - rule_id: 'B101'
+      file_path: 'article-curation/**/tests/**'
+      reason: 'pytest uses assert by design; asserts appear only in test-only code.'
+    - rule_id: 'B101'
+      file_path: 'article-curation/**/test_*.py'
+      reason: 'pytest uses assert by design; asserts appear only in test-only code.'

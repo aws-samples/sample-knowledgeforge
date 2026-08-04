@@ -27,3 +27,6 @@ env/
 
 # Logs
 *.log
+
+# Security scan reports (do not commit)
+ash.html
