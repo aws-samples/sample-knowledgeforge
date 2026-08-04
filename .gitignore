@@ -30,3 +30,7 @@ env/
 
 # Security scan reports (do not commit)
 ash.html
+
+# ASH scan output (the .ash/.ash.yaml config is tracked; run output is not)
+.ash/ash_output/
+.ash/*.log

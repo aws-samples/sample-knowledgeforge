@@ -72,6 +72,7 @@ def _fetch_profile(app, env_name, profile):
     try:
         request = urllib.request.Request(url, method="GET")
         # Scheme/host are fixed to the local http AppConfig extension (validated above).
+        # nosemgrep: python.lang.security.audit.dynamic-urllib-use-detected.dynamic-urllib-use-detected
         with urllib.request.urlopen(request, timeout=5) as resp:  # nosec B310 - fixed localhost http endpoint
             data = json.loads(resp.read().decode())
             logger.info(f"[APPCONFIG] loaded {profile} from {app}")
