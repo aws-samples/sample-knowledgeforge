@@ -1,0 +1,11 @@
+## Article Classification
+{{classification}}
+
+## Current Quality Dimension Scores
+{{scores}}
+
+## Quality Issues Found
+{{issues}}
+
+## Article HTML (with media placeholders)
+{{article_html}}

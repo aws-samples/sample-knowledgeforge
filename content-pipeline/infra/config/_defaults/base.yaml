@@ -1,0 +1,304 @@
+# ============================================================================
+# Base Configuration — shared across ALL tenants, ALL environments
+# ============================================================================
+#
+# This file contains generic defaults that rarely change between environments.
+# Environment-specific values (bucket names, Glue config, SQS policies, etc.)
+# go in config/<env>/<region>.yaml.
+# Tenant-specific overrides go in tenants/<tenant>/config/<env>/<region>.yaml.
+#
+# Merge order: base.yaml → env config → tenant config
+# ============================================================================
+
+# Context (injected at synth time)
+tenant_id: "${tenant_id}"
+environment: "${environment}"
+env_code: "${env_code}"
+region: "${region}"
+region_code: "${region_code}"
+
+# ============================================================================
+# Models
+# ============================================================================
+models:
+  llm_model_id: "anthropic.claude-sonnet-4-5-20250929-v1:0"
+  embedding_model_id: "amazon.titan-embed-text-v2:0"
+  embedding_dimensions: 1024
+  embedding_normalize: true
+
+# ============================================================================
+# Inference Parameters (per-prompt LLM settings for Bedrock Managed Prompts)
+# ============================================================================
+inference:
+  classification:
+    temperature: 0
+    max_tokens: 256
+  quality:
+    temperature: 0
+    max_tokens: 1024
+  enrichment:
+    temperature: 0.2
+    max_tokens: 8192
+  enrichment_light:
+    temperature: 0.1
+    max_tokens: 8192
+  post_scoring:
+    temperature: 0
+    max_tokens: 256
+  retirement_detection:
+    temperature: 0
+    max_tokens: 256
+
+# ============================================================================
+# Truncation (max characters sent to LLM per phase)
+# ============================================================================
+truncation:
+  classification_max_chars: 150000
+  quality_max_chars: 50000
+  post_scoring_max_chars: 100000
+  embedding_max_chars: 50000
+  retirement_detection_max_chars: 50000
+
+# ============================================================================
+# Retirement Detection (article retirement flagging)
+# ============================================================================
+retirement:
+  enabled: true
+  llm_age_threshold_days: 1095  # 3 years - only run LLM if article is older than this
+  freshness_threshold_days: 1825  # 5 years
+  min_confidence_threshold: 90  # Only flag if LLM confidence > 90%
+
+# ============================================================================
+# Quality Dimensions (weights for quality scoring, must sum to 1.0)
+# ============================================================================
+quality_dimensions:
+  completeness:
+    weight: 0.19
+    description: "Covers prerequisites, steps, expected outcome, edge cases"
+  actionability:
+    weight: 0.17
+    description: "Steps are specific and executable without extra clarification"
+  structure:
+    weight: 0.14
+    description: "Proper headings, numbered steps, logical section order"
+  coherence:
+    weight: 0.11
+    description: "Logical flow between sections, no contradictions"
+  readability:
+    weight: 0.09
+    description: "Plain language, short sentences, easy to follow"
+  self_service_value:
+    weight: 0.09
+    description: "User can resolve issue entirely without contacting support"
+  freshness:
+    weight: 0.08
+    description: "Computed by Lambda from article dates, not scored by LLM"
+  automation_readiness:
+    weight: 0.06
+    description: "Article lends itself to automation with clear decision trees"
+  grammar:
+    weight: 0.04
+    description: "Spelling, punctuation, sentence structure"
+  security:
+    weight: 0.03
+    description: "No exposed PII, credentials, or internal-only information"
+
+# ============================================================================
+# Dedup
+# ============================================================================
+dedup:
+  cosine_distance_threshold: 0.05
+  top_k: 5
+  quality_reference_top_k: 2
+
+# ============================================================================
+# Pipeline — Lambda threading
+# ============================================================================
+pipeline:
+  max_workers_phase1: 8
+  max_workers_phase2: 10
+  max_workers_s3_read: 32
+  phase1_article_timeout: 120
+  phase2_article_timeout: 180
+  throttle_base_delay: 5.0
+  throttle_max_retries: 5
+  batch_size: 400
+  max_consecutive_batch_failures: 3
+
+# ============================================================================
+# Step Function — distributed map and concurrency settings
+# ============================================================================
+step_function:
+  max_items_per_batch: 10
+  max_concurrency: 40
+  tolerated_failure_pct: 10
+  log_retention_days: 30
+
+# ============================================================================
+# Change Detection (defaults — override glue config per environment)
+# ============================================================================
+change_detection:
+  protected_statuses:
+    - REQUEST_CREATED
+    - KM_APPROVED
+    - KM_REJECTED
+  max_parallel_athena_queries: 20  # Max concurrent Athena queries for tenant processing (Athena DML quota is 150 in dev)
+  glue:
+    database: ""
+    table: ""
+    tenant_column: "src_tenant_id"
+    updated_column: "last_updated_ts_utc"
+    athena_output_location: ""
+  s3_path_pattern: "{tenant_id}/"
+
+# ============================================================================
+# Lambda
+# ============================================================================
+lambda:
+  article_embed_memory: 512
+  article_embed_timeout_minutes: 15
+  dedup_memory: 1024
+  dedup_timeout_minutes: 15
+  ticket_submitter_memory: 256
+  ticket_submitter_timeout_seconds: 60
+  ticket_submitter_stream_batch_size: 5
+  webhook_handler_memory: 128
+  webhook_handler_timeout_seconds: 30
+  file_enumerator_memory: 3008  # 3008 MB (account quota limit) - supports ~22 parallel tenants (22 × 136 MB = 2,992 MB)
+  file_enumerator_timeout_minutes: 15
+  write_manifest_memory: 256
+  write_manifest_timeout_seconds: 60
+  dispatcher_lambda_memory: 512
+  dispatcher_lambda_timeout_minutes: 15
+  log_retention_days: 90
+
+# ============================================================================
+# EventBridge Schedule (defaults — override per environment)
+# ============================================================================
+schedule:
+  cron_minute: "0"
+  cron_hour: "6"
+  cron_day: ""
+  cron_month: ""
+  cron_weekday: ""
+  cron_year: ""
+
+# ============================================================================
+# SQS Queues
+# ============================================================================
+sqs:
+  batch_queue:
+    name: "processing_batch_queue"
+    visibility_timeout_seconds: 960
+    max_receive_count: 3
+    max_concurrency: 10
+  approval_queue:
+    name: "doc_approval_queue"
+    visibility_timeout_seconds: 60
+    max_receive_count: 3
+    batch_size: 5
+
+# ============================================================================
+# Guardrail (Bedrock content safety)
+# ============================================================================
+guardrail:
+  content_filters:
+    - type: HATE
+      input_strength: NONE
+      output_strength: HIGH
+    - type: INSULTS
+      input_strength: NONE
+      output_strength: HIGH
+    - type: SEXUAL
+      input_strength: NONE
+      output_strength: HIGH
+    - type: VIOLENCE
+      input_strength: NONE
+      output_strength: HIGH
+    - type: MISCONDUCT
+      input_strength: NONE
+      output_strength: HIGH
+  grounding_threshold: 0.75
+
+# ============================================================================
+# Quality Thresholds (default, can be overridden per tenant)
+# ============================================================================
+quality_thresholds:
+  ITSM_KB: 60
+  CONTENT_GENERATOR_IC: 70
+  CONTENT_GENERATOR_RCA: 70
+  default: 70
+
+# ============================================================================
+# AppConfig Extension
+# ============================================================================
+appconfig_extension_layer_version: 128
+
+# ============================================================================
+# Field Mapping — DW to TicketSystem (outbound, used by ticket_submitter)
+# ============================================================================
+field_mapping:
+  outbound:
+    src_kb_article_id: "sys_id"
+    article_title: "short_description"
+    full_text: "text"
+    active: "active"
+    status: "workflow_state"
+    kb_author: "author"
+    kb_valid_to_ts: "valid_to"
+    created_ts_utc: "sys_created_on"
+    last_updated_ts_utc: "sys_updated_on"
+    kb_category: "kb_category"
+    kb_type: "article_type"
+    sys_domain: "sys_domain"
+    sys_class_name: "sys_class_name"
+    description: "description"
+    can_read_user_criteria: "can_read_user_criteria"
+
+# ============================================================================
+# LLMOps (defaults — override import_existing per environment)
+# ============================================================================
+llmops:
+  import_existing: false
+  log_retention_days: 90
+  s3_log_expiration_days: 90
+  alarms:
+    throttle_threshold: 10
+    latency_threshold_ms: 30000
+    error_threshold: 5
+    guardrail_intervention_threshold: 5
+    sns_topic_arn: ""
+
+# ============================================================================
+# TicketSystem Integration (defaults — override per environment/tenant)
+# ============================================================================
+ticketsystem:
+  catalog_api_url: ""
+  review_limit: -1
+  tenant_connector_api_url: ""
+  tenant_connector_api_host: ""
+  tenant_connector_api_arn: ""
+
+# ============================================================================
+# S3 Buckets (defaults — override per environment)
+# ============================================================================
+s3:
+  source_bucket:
+    name: ""
+    prefix: "tenant_partitioning/itsm/snow/kb_articles"
+    import_existing: true
+  content_generator_source_bucket:
+    name: ""
+  pipeline_bucket:
+    name: ""
+    import_existing: false
+  kms_key_arn: ""
+
+# ============================================================================
+# DynamoDB Tables (shared, same name across environments)
+# ============================================================================
+dynamodb:
+  article_metadata:
+    name: "article_metadata"
+  pipeline_job_status:
+    name: "pipeline_job_status"

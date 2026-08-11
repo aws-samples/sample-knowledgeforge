@@ -1,0 +1,6 @@
+Classify the following knowledge base article:
+
+{{article_content}}
+
+Respond with JSON only:
+{"classification": "<category>", "confidence": <0-100>}

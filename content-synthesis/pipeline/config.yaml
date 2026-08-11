@@ -1,0 +1,128 @@
+# Article Pipeline Configuration
+# ──────────────────────────────────────────────────────────────
+# All values can be overridden by environment variables.
+# Env var naming convention: section keys joined by underscore, uppercased.
+# Example: bedrock.llm_model_id -> BEDROCK_LLM_MODEL_ID
+
+aws:
+  region: "eu-west-1"
+
+s3:
+  input_bucket: "source-input-bucket"
+  output_bucket: "content-synthesis-output-bucket"
+
+sqs:
+  queue_url: "https://sqs.eu-west-1.amazonaws.com/000000000000/content-synthesis-queue"
+  visibility_timeout_seconds: 1800
+  wait_time_seconds: 20
+  max_messages: 1
+
+dynamodb:
+  metrics_table: "content-synthesis-metrics"
+
+bedrock:
+  llm_model_id: "eu.anthropic.claude-sonnet-4-5-20250929-v1:0"
+  embedding_model_id: "amazon.titan-embed-text-v2:0"
+  max_tokens: 16384
+  temperature: 0.1
+  retry:
+    max_attempts: 5
+    base_delay: 2
+    max_delay: 30
+  client:
+    read_timeout: 120
+    connect_timeout: 10
+    retry_mode: "adaptive"
+    max_attempts: 5
+
+guardrail:
+  guardrail_id: ""
+  guardrail_version: "DRAFT"
+
+vectors:
+  top_k: 5
+
+pipeline:
+  max_concurrent_themes: 5
+  max_sample_tickets: 100
+  max_notes_per_ticket: 2000
+  tenant_folders: ""  # comma-separated override, empty = discover from S3
+
+ecs:
+  cpu: 2048
+  memory: 4096
+
+ecr:
+  repository_name: "content-synthesis"
+  max_image_count: 10
+
+prompts:
+  kb_system: |
+    You are a senior IT Service Management knowledge base author.
+    Write clear, actionable KB articles for IT support teams.
+
+    Output the article as clean, semantic HTML. Do NOT include <html>, <head>, or <body> tags —
+    only the inner content starting from the first <h1>.
+    Use <h1> for the title, <h2> for section headings, <p> for paragraphs,
+    <ol>/<li> for numbered steps, and <ul>/<li> for bullet lists.
+
+    Each article MUST have these sections in order:
+    1. Title — Clear, descriptive title for the KB article
+    2. Summary — Brief overview of the issue and resolution
+    3. Symptoms — Observable signs and user-reported issues
+    4. Root Cause — The underlying cause of the issue
+    5. Resolution Steps — Numbered, actionable steps to resolve
+    6. Prevention — Steps to prevent recurrence
+    7. Related Topics — Related KB articles or topics
+
+    For dates, use '{month} {year}' where specific dates are unknown.
+
+    {grounding}
+
+    IMPORTANT: After the article HTML, output the following on a new line:
+    {SHORT_DESC_DELIMITER}
+    Then write a single one-line short description (max 100 chars) in plain text
+    summarizing the KB article.
+
+  rca_system: |
+    You are a senior IT Problem Manager writing Root Cause Analysis (RCA) documents.
+    Write structured, thorough RCA reports for IT service management teams.
+
+    Output the document as clean, semantic HTML. Do NOT include <html>, <head>, or <body> tags —
+    only the inner content starting from the first <h1>.
+    Use <h1> for the title, <h2> for section headings, <p> for paragraphs,
+    <ol>/<li> for numbered steps, <ul>/<li> for bullet lists, and <table> for timelines.
+
+    Each RCA document MUST have these sections in order:
+    1. Executive Summary — Brief overview of the problem, affected customer/service,
+    and resolution status.
+    2. Problem Description — Detailed description of the incident(s), what happened,
+    and how it was detected.
+    3. Customer Impact — Business impact, service impact, number of users affected,
+    duration of impact.
+    4. Root Cause — The underlying cause that enabled the incident. Be specific.
+    5. 5-Why Analysis — A chain of 5 'Why?' questions and answers drilling down
+    from symptom to root cause.
+    6. Workaround & Resolution — Immediate actions taken to restore service.
+    7. Corrective Actions — Actions to fix the root cause (with owner placeholders
+    and target dates).
+    8. Preventive Actions — Actions to prevent recurrence (with owner placeholders
+    and target dates).
+    9. Additional Considerations — Automation opportunities and scalable solutions.
+    10. Key Events Timeline — Detection, escalation, resolution timestamps.
+    11. Cause Code — Category and sub-category of the cause
+    (e.g., Software/Configuration, Hardware/Failure, Network/Connectivity).
+
+    For dates, use 'March 2026' where specific dates are unknown.
+
+    {grounding}
+
+    IMPORTANT: After the RCA document HTML, output the following on a new line:
+    {SHORT_DESC_DELIMITER}
+    Then write a single one-line short description (max 100 chars) in plain text
+    summarizing the root cause analysis.
+
+tags:
+  project: "content-synthesis"
+  environment: "production"
+  owner: "platform-team"

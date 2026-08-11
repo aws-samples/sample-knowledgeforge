@@ -1,0 +1,5 @@
+## Article Classification
+{{classification}}
+
+## Article Content
+{{article_content}}

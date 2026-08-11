@@ -1,0 +1,25 @@
+{
+  "name": "content-pipeline-infra",
+  "version": "1.0.0",
+  "bin": {
+    "infra": "bin/app.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "cdk": "cdk"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.5",
+    "@types/node": "^22.0.0",
+    "aws-cdk": "2.1109.0",
+    "ts-node": "^10.9.2",
+    "typescript": "5.7.3"
+  },
+  "dependencies": {
+    "@docforge/cdk-constructs": "file:../docforge-cdk-constructs",
+    "aws-cdk-lib": "2.261.0",
+    "constructs": "10.5.1",
+    "dotenv": "^16.4.0",
+    "js-yaml": "^4.1.0"
+  }
+}

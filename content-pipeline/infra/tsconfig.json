@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "commonjs",
+    "lib": ["es2020"],
+    "declaration": true,
+    "strict": true,
+    "noImplicitAny": true,
+    "strictNullChecks": true,
+    "noImplicitThis": true,
+    "alwaysStrict": true,
+    "outDir": "./cdk.out",
+    "rootDir": "..",
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "baseUrl": ".",
+    "paths": {
+      "@docforge/cdk-constructs": ["./docforge-cdk-constructs/index"]
+    }
+  },
+  "include": ["bin/**/*", "lib/**/*", "../docforge-cdk-constructs/constructs/**/*", "../docforge-cdk-constructs/utils/**/*", "../docforge-cdk-constructs/index.ts"],
+  "exclude": ["node_modules", "cdk.out", "../docforge-cdk-constructs/node_modules", "../docforge-cdk-constructs/**/__tests__/**", "../docforge-cdk-constructs/**/*.test.ts", "../docforge-cdk-constructs/**/*.spec.ts"]
+}

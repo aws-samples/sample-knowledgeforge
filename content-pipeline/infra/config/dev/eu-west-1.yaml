@@ -1,0 +1,83 @@
+# ============================================================================
+# Dev Environment — eu-west-1
+# ============================================================================
+# Overrides base.yaml for dev-specific resources and settings.
+# Merge order: base.yaml → this file → tenant config
+# ============================================================================
+
+# VPC configuration for Lambda functions
+vpc:
+  vpc_id: "vpc-0example1234567890"
+  subnet_ids: ["subnet-0example00000001", "subnet-0example00000002", "subnet-0example00000003"]
+
+# Automation account (cross-account access to SQS via KMS)
+automation:
+  account_id: "000000000000"
+  region: "eu-west-1"
+  task_role: "automation-task_role"
+  
+s3:
+  source_bucket:
+    name: "shared-d-euw1-curated-unstructured-s3"
+    prefix: "tenant_partitioning/itsm/snow/kb_articles"
+    import_existing: true
+  content_generator_source_bucket:
+    name: "shared-d-euw1-knowledge-output"
+  pipeline_bucket:
+    name: "doc-pipeline"
+    import_existing: false
+  source_kms_alias: "common-kms"
+
+
+# Encryption — Customer Managed Key for all pipeline resources
+encryption:
+  kms_key_arn: "arn:aws:kms:eu-west-1:000000000000:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+# Change Detection — Glue/Athena enabled in dev
+# NOTE: Lambda IAM role requires s3:GetObject + s3:ListBucket on the Glue data bucket:
+#   arn:aws:s3:::shared-d-euw1-curated-s3  (data team's bucket, read-only)
+#   arn:aws:s3:::shared-d-euw1-doc-pipeline (athena query results output, read+write)
+# These permissions are conditionally added in content-pipeline-shared-stack.ts
+# when change_detection.glue.database is non-empty.
+change_detection:
+  max_parallel_athena_queries: 20  # Conservative value until new code is tested. After testing, can increase based on actual memory usage (estimated ~36 tenants possible with 3008 MB)
+  glue:
+    database: "shared_d_euw1_ct_itsm_snow_gdb"
+    table: "knowledge_base_dim"
+    tenant_column: "src_tenant_id"
+    updated_column: "last_updated_ts_utc"
+    athena_output_location: "s3://shared-d-euw1-doc-pipeline/athena-results/"
+    # Glue data bucket (owned by data team) — Lambda needs read access for Athena queries
+    glue_data_bucket: "shared-d-euw1-curated-s3"
+  # Glue tenant_id (UUID) → tenant_code + aws_region mapping is now read
+  # directly from Glue table columns (tenant_code, aws_region). No static mapping needed.
+
+# Problem Finder — DynamoDB-based change detection
+content_generator:
+  dynamodb_table: "shared-d-euw1-knowledge_gen"
+  gsi_name: "tenant-generation-timestamp-index"
+
+# EventBridge Schedule
+schedule:
+  cron_minute: "0"
+  cron_hour: "6"
+  cron_day: ""
+  cron_month: ""
+  cron_weekday: ""
+  cron_year: ""
+
+# Lambda — dev-specific memory overrides
+lambda:
+  file_enumerator_memory: 3008  # 3008 MB (account quota limit) - supports ~22 parallel tenants. Need to request quota increase for more.
+
+# LLMOps
+llmops:
+  import_existing: false
+
+# TicketSystem defaults for dev (override per tenant as needed)
+ticketsystem:
+  catalog_api_url: "https://api.example.com/dev/itsm/api/v1/ritm"
+  tenant_connector_api_url: "https://api.example.com/dev/tenant-connectors"
+  tenant_connector_api_host: "exampleapi.execute-api.eu-west-1.amazonaws.com"
+  tenant_connector_api_arn: "arn:aws:execute-api:eu-west-1:000000000000:exampleapi/*"
+  review_limit: 1

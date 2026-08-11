@@ -1,0 +1,31 @@
+# Global Environment Configuration
+# Defines account IDs, regions, and environment codes.
+# Tenants reference these values via ${var} placeholders in their config.
+
+project: docforge-pipeline
+
+environments:
+  dev:
+    description: "Development environment"
+    regions:
+      eu-west-1:
+        account_id: "000000000000"
+
+# Bedrock Inference Profile Prefix by Region
+# Cross-region inference profiles use a geographic prefix.
+inference_prefix_mappings:
+  eu-west-1: eu
+  us-east-1: us
+  us-west-2: us
+  ap-south-1: apac
+  ap-southeast-2: apac
+
+# Tags (applied to all resources)
+tags:
+  Project: docforge
+  Owner: content-pipeline-team
+  CostCenter: COST-CENTER
+  Application: content-pipeline-pipeline
+  CreatedBy: cdk
+  BackupRequired: "yes"
+  ProjectOwner: content-pipeline-team

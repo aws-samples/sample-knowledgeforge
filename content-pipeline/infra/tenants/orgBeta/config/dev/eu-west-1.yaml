@@ -1,0 +1,31 @@
+# Tenant: orgbeta — DEV Environment — eu-west-1 Region
+#
+# This file is a LIST of per-connect-region configurations.
+# One stack is created per entry. Each entry can have its own overrides.
+# Everything not specified is inherited from config/_defaults/base.yaml.
+#
+# Stack naming: <tenant>-<envCode>-<regionCode>-<connect_region>-docpipeline
+# ============================================================================
+
+stacks:
+  - connect_region: us-east-1
+
+    # Encryption — Customer Managed Key for tenant resources
+    encryption:
+      kms_key_arn: "arn:aws:kms:eu-west-1:000000000000:key/xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+
+    quality_thresholds:
+      ITSM_KB: 60
+      CONTENT_GENERATOR_IC: 70
+      CONTENT_GENERATOR_RCA: 70
+      default: 70
+
+    ticketsystem:
+      catalog_api_url: "https://api.example.com/dev/itsm/api/v1/ritm"
+      kms_account_id: "000000000000"
+      review_limit: 2
+
+    retirement:
+      enabled: true
+      freshness_threshold_days: 1825
+      min_confidence_threshold: 90
