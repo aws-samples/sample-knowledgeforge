@@ -1,6 +1,6 @@
 # KnowledgeForge
 
-A closed-loop knowledge base lifecycle platform for IT Service Management (ITSM). KnowledgeForge mines reusable knowledge out of resolved incident tickets, turns it into new KB and RCA articles, and continuously curates both new and existing articles - classifying, deduplicating, quality-scoring, and enriching them before routing them to ServiceNow for knowledge-manager review.
+A closed-loop knowledge base lifecycle platform for IT Service Management. KnowledgeForge mines reusable knowledge out of resolved incident tickets, turns it into new KB and RCA articles, and continuously curates both new and existing articles - classifying, deduplicating, quality-scoring, and enriching them before routing them to Jira Service Management for knowledge-manager review.
 
 The platform is built from two complementary subsystems:
 
@@ -38,7 +38,7 @@ Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (
         └───────────────────────────────────┘
                         │  enriched articles
                         ▼
-        ServiceNow - knowledge-manager review (human in the loop)
+        Jira Service Management - knowledge-manager review (human in the loop)
 ```
 
 Article Curation also embeds every article it processes into per-tenant S3 Vectors indexes, which Article Generation reuses as RAG grounding context - closing the loop so newly generated content is informed by the existing, curated knowledge base.
@@ -67,7 +67,7 @@ Curates both newly generated articles and the existing KB at scale.
 - **Classify & embed** - Claude Sonnet 4.5 classifies each article (SOP / FAQ / Troubleshooting / RCA / Runbook); Titan Embed v2 (1024-dim) embeddings are stored in per-tenant S3 Vectors.
 - **Deduplicate** - cosine-similarity matching against the vector index, with freshness-swap logic to retire stale duplicates.
 - **Quality score + enrich** - 10-dimension weighted quality scoring with threshold gating, placeholder-based LLM enrichment that preserves media/heading tags, and post-enrichment re-scoring to guarantee improvement.
-- **Human in the loop** - enriched articles are routed to ServiceNow for knowledge-manager review; approval/rejection flows back in via an SQS queue, and rejected content is automatically removed from the vector index.
+- **Human in the loop** - enriched articles are routed to Jira Service Management for knowledge-manager review; approval/rejection flows back in via an SQS queue, and rejected content is automatically removed from the vector index.
 - **Orchestration** - SQS FIFO batching feeds a two-phase Step Functions Distributed Map, with circuit-breaker and dead-letter handling for fault tolerance.
 
 See [`article-curation/README.md`](article-curation/README.md) for the full architecture, phase breakdown, and config layering. End-to-end test procedures are in [`article-curation/TESTING_INSTRUCTIONS.md`](article-curation/TESTING_INSTRUCTIONS.md).
@@ -88,7 +88,7 @@ article-generation/        Upstream - incident-to-article generation (ECS Fargat
 article-curation/          Downstream - classify, dedup, score, enrich (Lambda + Step Functions)
   infra/              CDK app (shared stack + per-tenant stacks, layered YAML config)
   lambda/             Lambda functions (file_enumerator, dispatcher, classify_embed,
-                      dedup, sn_task_creator, webhook_handler, shared layer)
+                      dedup, jsm_task_creator, webhook_handler, shared layer)
   step-function/      Step Functions ASL definition
 ```
 
@@ -99,6 +99,6 @@ article-curation/          Downstream - classify, dedup, score, enrich (Lambda +
 - **Data** - Amazon DynamoDB, Amazon S3, AWS Glue + Amazon Athena
 - **Messaging** - Amazon SQS (FIFO + standard, with DLQs), Amazon EventBridge
 - **IaC** - AWS CDK (TypeScript)
-- **Integration** - ServiceNow (knowledge-manager review)
+- **Integration** - Jira Service Management (knowledge-manager review)
 
 > Note: this repository is a sanitized reference copy. Account IDs, KMS key IDs, tenant identifiers, and bucket names are placeholders.
