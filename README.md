@@ -6,8 +6,8 @@ The platform is built from two complementary subsystems:
 
 | Subsystem | Role | Compute model | Location |
 |-----------|------|---------------|----------|
-| **Article Generation** | Upstream. Mines clustered incident tickets into new KB + RCA articles. | ECS Fargate (long-running, bursty) | [`content-synthesis/`](content-synthesis/) |
-| **Article Curation** | Downstream. Classifies, deduplicates, quality-scores, and enriches existing + newly generated articles. | Lambda + Step Functions (event-driven, parallel) | [`content-pipeline/`](content-pipeline/) |
+| **Content Synthesis** | Upstream. Mines clustered incident tickets into new KB + RCA articles. | ECS Fargate (long-running, bursty) | [`content-synthesis/`](content-synthesis/) |
+| **Content Pipeline** | Downstream. Classifies, deduplicates, quality-scores, and enriches existing + newly generated articles. | Lambda + Step Functions (event-driven, parallel) | [`content-pipeline/`](content-pipeline/) |
 
 Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (Claude Sonnet 4.5 for generation/enrichment, Titan Embed v2 for embeddings) and Amazon S3 Vectors for semantic search.
 
@@ -20,7 +20,7 @@ Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (
                         │
                         ▼
         ┌───────────────────────────────────┐
-        │          ARTICLE GENERATION        │
+        │          CONTENT SYNTHESIS          │
         │  (ECS Fargate)                     │
         │  • RAG grounding from S3 Vectors   │
         │  • Bedrock streaming generation    │
@@ -29,7 +29,7 @@ Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (
                         │  new articles (JSON) land in source S3
                         ▼
         ┌───────────────────────────────────┐
-        │          ARTICLE CURATION          │
+        │          CONTENT PIPELINE           │
         │  (Lambda + Step Functions)         │
         │  • Classify + embed                │
         │  • Semantic dedup (S3 Vectors)     │
@@ -41,11 +41,11 @@ Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (
         Jira Service Management - knowledge-manager review (human in the loop)
 ```
 
-Article Curation also embeds every article it processes into per-tenant S3 Vectors indexes, which Article Generation reuses as RAG grounding context - closing the loop so newly generated content is informed by the existing, curated knowledge base.
+Content Pipeline also embeds every article it processes into per-tenant S3 Vectors indexes, which Content Synthesis reuses as RAG grounding context - closing the loop so newly generated content is informed by the existing, curated knowledge base.
 
 ---
 
-## Article Generation (upstream)
+## Content Synthesis (upstream)
 
 Mines new knowledge from clustered incident tickets.
 
@@ -55,11 +55,11 @@ Mines new knowledge from clustered incident tickets.
   - **KB articles** - Summary, Symptoms, Root Cause, Resolution Steps, Prevention, Related Topics.
   - **RCA documents** - Executive Summary, Problem Description, Customer Impact, Root Cause, 5-Why Analysis, Workaround & Resolution, Corrective/Preventive Actions, Key Events Timeline, Cause Code.
 - **Compute** - runs as an ECS Fargate task (chosen over Lambda for long-running, bursty generation work that exceeds Lambda limits).
-- **Output** - KB and RCA articles written to S3 as `{tenant}/{article_type}/{date}/{uuid}.json`, which becomes input for Article Curation.
+- **Output** - KB and RCA articles written to S3 as `{tenant}/{article_type}/{date}/{uuid}.json`, which becomes input for Content Pipeline.
 
 See [`content-synthesis/README.md`](content-synthesis/README.md) for deploy steps.
 
-## Article Curation (downstream)
+## Content Pipeline (downstream)
 
 Curates both newly generated articles and the existing KB at scale.
 
