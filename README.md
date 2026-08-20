@@ -6,8 +6,8 @@ The platform is built from two complementary subsystems:
 
 | Subsystem | Role | Compute model | Location |
 |-----------|------|---------------|----------|
-| **Article Generation** | Upstream. Mines clustered incident tickets into new KB + RCA articles. | ECS Fargate (long-running, bursty) | [`article-generation/`](article-generation/) |
-| **Article Curation** | Downstream. Classifies, deduplicates, quality-scores, and enriches existing + newly generated articles. | Lambda + Step Functions (event-driven, parallel) | [`article-curation/`](article-curation/) |
+| **Article Generation** | Upstream. Mines clustered incident tickets into new KB + RCA articles. | ECS Fargate (long-running, bursty) | [`content-synthesis/`](content-synthesis/) |
+| **Article Curation** | Downstream. Classifies, deduplicates, quality-scores, and enriches existing + newly generated articles. | Lambda + Step Functions (event-driven, parallel) | [`content-pipeline/`](content-pipeline/) |
 
 Both subsystems are multi-tenant, run on `eu-west-1`, and share Amazon Bedrock (Claude Sonnet 4.5 for generation/enrichment, Titan Embed v2 for embeddings) and Amazon S3 Vectors for semantic search.
 
@@ -57,7 +57,7 @@ Mines new knowledge from clustered incident tickets.
 - **Compute** - runs as an ECS Fargate task (chosen over Lambda for long-running, bursty generation work that exceeds Lambda limits).
 - **Output** - KB and RCA articles written to S3 as `{tenant}/{article_type}/{date}/{uuid}.json`, which becomes input for Article Curation.
 
-See [`article-generation/README.md`](article-generation/README.md) for deploy steps.
+See [`content-synthesis/README.md`](content-synthesis/README.md) for deploy steps.
 
 ## Article Curation (downstream)
 
@@ -70,7 +70,7 @@ Curates both newly generated articles and the existing KB at scale.
 - **Human in the loop** - enriched articles are routed to Jira Service Management for knowledge-manager review; approval/rejection flows back in via an SQS queue, and rejected content is automatically removed from the vector index.
 - **Orchestration** - SQS FIFO batching feeds a two-phase Step Functions Distributed Map, with circuit-breaker and dead-letter handling for fault tolerance.
 
-See [`article-curation/README.md`](article-curation/README.md) for the full architecture, phase breakdown, and config layering. End-to-end test procedures are in [`article-curation/TESTING_INSTRUCTIONS.md`](article-curation/TESTING_INSTRUCTIONS.md).
+See [`content-pipeline/README.md`](content-pipeline/README.md) for the full architecture, phase breakdown, and config layering. End-to-end test procedures are in [`content-pipeline/TESTING_INSTRUCTIONS.md`](content-pipeline/TESTING_INSTRUCTIONS.md).
 
 ---
 
@@ -81,15 +81,16 @@ Every tenant is isolated across the whole platform: its own AppConfig profile, S
 ## Repository layout
 
 ```
-article-generation/        Upstream - incident-to-article generation (ECS Fargate)
+content-synthesis/         Upstream - incident-to-article generation (ECS Fargate)
   cdk/                CDK app (VPC, SQS, DynamoDB, ECR, ECS, guardrail)
   pipeline/           Container application (generation logic, prompts, config)
 
-article-curation/          Downstream - classify, dedup, score, enrich (Lambda + Step Functions)
+content-pipeline/          Downstream - classify, dedup, score, enrich (Lambda + Step Functions)
   infra/              CDK app (shared stack + per-tenant stacks, layered YAML config)
-  lambda/             Lambda functions (file_enumerator, dispatcher, classify_embed,
-                      dedup, jsm_task_creator, webhook_handler, shared layer)
+  functions/          Lambda functions (scanner, orchestrator, tagger, scorer,
+                      reviewer, callback_processor, common shared layer)
   step-function/      Step Functions ASL definition
+  docforge-cdk-constructs/  Reusable CDK constructs (Lambda, DynamoDB, S3, KMS, etc.)
 ```
 
 ## Tech stack
